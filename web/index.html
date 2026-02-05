@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>web2ssh</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+</head>
+<body>
+    <div id="app">
+        <div id="connect-form" class="panel">
+            <h1>web2ssh</h1>
+            <div class="form-group">
+                <label>Host</label>
+                <input type="text" id="host" placeholder="192.168.1.100">
+            </div>
+            <div class="form-group">
+                <label>Port</label>
+                <input type="number" id="port" value="22">
+            </div>
+            <div class="form-group">
+                <label>User</label>
+                <input type="text" id="user" placeholder="root">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="password">
+            </div>
+            <button id="connect-btn">Connect</button>
+            <div id="error-msg" class="error"></div>
+        </div>
+        <div id="terminal-container" class="hidden">
+            <div id="terminal-header">
+                <span id="connection-info"></span>
+                <button id="disconnect-btn">Disconnect</button>
+            </div>
+            <div id="terminal"></div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script src="js/terminal.js"></script>
+</body>
+</html>
