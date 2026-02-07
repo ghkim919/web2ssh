@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 
+	"web2ssh/internal/config"
 	"web2ssh/internal/server"
+	"web2ssh/internal/session"
 )
 
 //go:embed web/*
@@ -23,10 +25,27 @@ func main() {
 		log.Fatal(err)
 	}
 
+	sessionStore, err := session.NewStore()
+	if err != nil {
+		log.Fatal(err)
+	}
+	sessionHandler := session.NewHandler(sessionStore)
+
+	configStore, err := config.NewStore()
+	if err != nil {
+		log.Fatal(err)
+	}
+	configHandler := config.NewHandler(configStore)
+
 	mux := http.NewServeMux()
 
 	mux.Handle("/", http.FileServer(http.FS(webContent)))
-	mux.HandleFunc("/ws", server.HandleWebSocket)
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		server.HandleWebSocket(w, r, configStore)
+	})
+	mux.Handle("/api/sessions", sessionHandler)
+	mux.Handle("/api/sessions/", sessionHandler)
+	mux.Handle("/api/settings", configHandler)
 
 	addr := fmt.Sprintf(":%d", *port)
 	fmt.Printf("web2ssh server starting at http://localhost%s\n", addr)
