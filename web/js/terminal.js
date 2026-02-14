@@ -152,8 +152,16 @@ function switchTab(tabId) {
     renderTabBar();
 
     if (tab.fitAddon && tab.term) {
-        tab.fitAddon.fit();
-        tab.term.focus();
+        requestAnimationFrame(() => {
+            tab.fitAddon.fit();
+            if (tab.ws && tab.ws.readyState === WebSocket.OPEN) {
+                tab.ws.send(JSON.stringify({
+                    type: 'resize',
+                    data: JSON.stringify({ cols: tab.term.cols, rows: tab.term.rows })
+                }));
+            }
+            tab.term.focus();
+        });
     }
 }
 
