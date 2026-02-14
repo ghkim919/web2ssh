@@ -86,6 +86,7 @@ function createTab() {
         label: 'New Tab',
         state: 'form',
         connectTimeout: null,
+        connInfo: null,
     };
 
     renderTabBar();
@@ -303,6 +304,7 @@ function connect() {
             case 'connected':
                 clearTimeout(tab.connectTimeout);
                 tab.state = 'connected';
+                tab.connInfo = { host, port, user };
                 pendingTabId = null;
 
                 if (Object.keys(tabs).length === 1 && !document.getElementById('app').classList.contains('terminal-mode')) {
@@ -566,6 +568,71 @@ async function deleteSession(id) {
         showError('Failed to delete session');
     }
 }
+
+function duplicateTab(tabId) {
+    const srcTab = tabs[tabId];
+    if (!srcTab || !srcTab.connInfo) return;
+
+    const newTabId = createTab();
+    if (newTabId === null) {
+        showError('Maximum tabs reached');
+        return;
+    }
+
+    pendingTabId = newTabId;
+    switchTab(newTabId);
+    showConnectFormOverlay();
+
+    document.getElementById('host').value = srcTab.connInfo.host;
+    document.getElementById('port').value = srcTab.connInfo.port;
+    document.getElementById('user').value = srcTab.connInfo.user;
+    document.getElementById('password').value = '';
+    document.getElementById('password').focus();
+}
+
+const tabContextMenu = document.getElementById('tab-context-menu');
+let contextMenuTabId = null;
+
+tabList.addEventListener('contextmenu', (e) => {
+    const tabItem = e.target.closest('.tab-item');
+    if (!tabItem) return;
+    e.preventDefault();
+
+    contextMenuTabId = Number(tabItem.dataset.tabId);
+    const tab = tabs[contextMenuTabId];
+
+    const dupBtn = document.getElementById('ctx-duplicate');
+    dupBtn.disabled = !tab || !tab.connInfo;
+
+    tabContextMenu.classList.remove('hidden');
+    let x = e.clientX;
+    let y = e.clientY;
+    const rect = tabContextMenu.getBoundingClientRect();
+    if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width;
+    if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height;
+    tabContextMenu.style.left = x + 'px';
+    tabContextMenu.style.top = y + 'px';
+});
+
+function hideContextMenu() {
+    tabContextMenu.classList.add('hidden');
+    contextMenuTabId = null;
+}
+
+document.addEventListener('click', hideContextMenu);
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideContextMenu();
+});
+
+document.getElementById('ctx-duplicate').addEventListener('click', () => {
+    if (contextMenuTabId !== null) duplicateTab(contextMenuTabId);
+    hideContextMenu();
+});
+
+document.getElementById('ctx-close').addEventListener('click', () => {
+    if (contextMenuTabId !== null) closeTab(contextMenuTabId);
+    hideContextMenu();
+});
 
 function escapeHtml(str) {
     const div = document.createElement('div');

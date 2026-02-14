@@ -563,3 +563,37 @@ button:disabled {
     background: #3a4a70;
     color: #fff;
 }
+
+#tab-context-menu {
+    position: fixed;
+    z-index: 2000;
+    background: #16213e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 140px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+#tab-context-menu button {
+    width: 100%;
+    padding: 8px 16px;
+    background: transparent;
+    color: #ccc;
+    font-size: 13px;
+    text-align: left;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+}
+
+#tab-context-menu button:hover {
+    background: #1a2a4a;
+    color: #fff;
+}
+
+#tab-context-menu button:disabled {
+    color: #555;
+    cursor: not-allowed;
+    background: transparent;
+}
