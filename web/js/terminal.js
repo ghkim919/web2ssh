@@ -1,12 +1,15 @@
-let ws = null;
-let term = null;
-let fitAddon = null;
+const MAX_TABS = 10;
+let tabIdCounter = 0;
+let tabs = {};
+let activeTabId = null;
+let pendingTabId = null;
 let currentSettings = null;
 
 const connectForm = document.getElementById('connect-form');
 const terminalContainer = document.getElementById('terminal-container');
-const terminalEl = document.getElementById('terminal');
+const terminalsWrapper = document.getElementById('terminals-wrapper');
 const connectBtn = document.getElementById('connect-btn');
+const connectCancelBtn = document.getElementById('connect-cancel-btn');
 const disconnectBtn = document.getElementById('disconnect-btn');
 const saveSessionBtn = document.getElementById('save-session-btn');
 const errorMsg = document.getElementById('error-msg');
@@ -18,15 +21,21 @@ const settingsOverlay = document.getElementById('settings-overlay');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 const settingsSaveBtn = document.getElementById('settings-save-btn');
 const settingsCancelBtn = document.getElementById('settings-cancel-btn');
+const tabList = document.getElementById('tab-list');
+const newTabBtn = document.getElementById('new-tab-btn');
 
 connectBtn.addEventListener('click', connect);
-disconnectBtn.addEventListener('click', disconnect);
+connectCancelBtn.addEventListener('click', cancelNewTab);
+disconnectBtn.addEventListener('click', () => {
+    if (activeTabId !== null) disconnectTab(activeTabId);
+});
 saveSessionBtn.addEventListener('click', saveSession);
 settingsBtn.addEventListener('click', openSettings);
 connectSettingsBtn.addEventListener('click', openSettings);
 settingsCloseBtn.addEventListener('click', closeSettings);
 settingsCancelBtn.addEventListener('click', closeSettings);
 settingsSaveBtn.addEventListener('click', saveSettings);
+newTabBtn.addEventListener('click', requestNewTab);
 
 settingsOverlay.addEventListener('click', (e) => {
     if (e.target === settingsOverlay) closeSettings();
@@ -36,6 +45,12 @@ document.querySelectorAll('#connect-form input').forEach(input => {
     input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') connect();
     });
+});
+
+window.addEventListener('resize', () => {
+    if (activeTabId !== null && tabs[activeTabId] && tabs[activeTabId].fitAddon) {
+        tabs[activeTabId].fitAddon.fit();
+    }
 });
 
 loadSessions();
@@ -50,6 +65,174 @@ async function loadSettings() {
             ssh: { connectionTimeout: 10, keepAliveInterval: 30, keepAliveMaxFails: 3 },
             terminal: { fontSize: 14, cursorStyle: 'block', cursorBlink: true, scrollbackLines: 1000 }
         };
+    }
+}
+
+function createTab() {
+    if (Object.keys(tabs).length >= MAX_TABS) return null;
+
+    const id = ++tabIdCounter;
+    const terminalEl = document.createElement('div');
+    terminalEl.className = 'terminal-pane';
+    terminalEl.id = `terminal-pane-${id}`;
+    terminalsWrapper.appendChild(terminalEl);
+
+    tabs[id] = {
+        id,
+        ws: null,
+        term: null,
+        fitAddon: null,
+        terminalEl,
+        label: 'New Tab',
+        state: 'form',
+        connectTimeout: null,
+    };
+
+    renderTabBar();
+    return id;
+}
+
+function renderTabBar() {
+    tabList.innerHTML = '';
+    const ids = Object.keys(tabs).map(Number);
+
+    ids.forEach(id => {
+        const tab = tabs[id];
+        const item = document.createElement('div');
+        item.className = 'tab-item' + (id === activeTabId ? ' active' : '');
+        item.dataset.tabId = id;
+
+        const label = document.createElement('span');
+        label.className = 'tab-label';
+        label.textContent = tab.label;
+        item.appendChild(label);
+
+        const close = document.createElement('button');
+        close.className = 'tab-close';
+        close.textContent = '\u00d7';
+        close.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeTab(id);
+        });
+        item.appendChild(close);
+
+        item.addEventListener('click', () => switchTab(id));
+        tabList.appendChild(item);
+    });
+
+    if (Object.keys(tabs).length >= MAX_TABS) {
+        newTabBtn.style.display = 'none';
+    } else {
+        newTabBtn.style.display = '';
+    }
+}
+
+function switchTab(tabId) {
+    if (!tabs[tabId] || tabId === activeTabId) return;
+
+    if (activeTabId !== null && tabs[activeTabId]) {
+        tabs[activeTabId].terminalEl.classList.remove('active');
+    }
+
+    activeTabId = tabId;
+    const tab = tabs[tabId];
+    tab.terminalEl.classList.add('active');
+
+    if (tab.state === 'connected') {
+        connectionInfo.textContent = tab.label;
+        disconnectBtn.disabled = false;
+    } else if (tab.state === 'disconnected') {
+        connectionInfo.textContent = tab.label + ' [disconnected]';
+        disconnectBtn.disabled = true;
+    } else {
+        connectionInfo.textContent = '';
+        disconnectBtn.disabled = true;
+    }
+
+    renderTabBar();
+
+    if (tab.fitAddon && tab.term) {
+        tab.fitAddon.fit();
+        tab.term.focus();
+    }
+}
+
+function closeTab(tabId) {
+    const tab = tabs[tabId];
+    if (!tab) return;
+
+    if (tab.connectTimeout) clearTimeout(tab.connectTimeout);
+    if (tab.ws) {
+        tab.ws.onclose = null;
+        tab.ws.close();
+    }
+    if (tab.term) tab.term.dispose();
+    if (tab.terminalEl && tab.terminalEl.parentNode) {
+        tab.terminalEl.parentNode.removeChild(tab.terminalEl);
+    }
+
+    delete tabs[tabId];
+
+    if (pendingTabId === tabId) {
+        pendingTabId = null;
+        hideConnectFormOverlay();
+    }
+
+    const ids = Object.keys(tabs).map(Number);
+    if (ids.length === 0) {
+        activeTabId = null;
+        showInitialScreen();
+    } else {
+        if (activeTabId === tabId) {
+            const idx = ids.length - 1;
+            activeTabId = null;
+            switchTab(ids[idx]);
+        } else {
+            renderTabBar();
+        }
+    }
+}
+
+function showInitialScreen() {
+    terminalContainer.classList.add('hidden');
+    connectForm.classList.remove('hidden');
+    connectForm.classList.remove('overlay-mode');
+    connectCancelBtn.classList.add('hidden');
+    document.getElementById('app').classList.remove('terminal-mode');
+    resetConnectBtn();
+}
+
+function requestNewTab() {
+    const tabId = createTab();
+    if (tabId === null) return;
+
+    pendingTabId = tabId;
+    switchTab(tabId);
+    showConnectFormOverlay();
+}
+
+function showConnectFormOverlay() {
+    connectForm.classList.remove('hidden');
+    connectForm.classList.add('overlay-mode');
+    connectCancelBtn.classList.remove('hidden');
+    resetConnectBtn();
+    hideError();
+    document.getElementById('password').value = '';
+    terminalsWrapper.appendChild(connectForm);
+}
+
+function hideConnectFormOverlay() {
+    connectForm.classList.add('hidden');
+    connectForm.classList.remove('overlay-mode');
+    connectCancelBtn.classList.add('hidden');
+    document.getElementById('app').appendChild(connectForm);
+}
+
+function cancelNewTab() {
+    if (pendingTabId !== null) {
+        const tabId = pendingTabId;
+        pendingTabId = null;
+        closeTab(tabId);
     }
 }
 
@@ -68,67 +251,106 @@ function connect() {
     connectBtn.disabled = true;
     connectBtn.textContent = 'Connecting...';
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    let tabId = pendingTabId;
 
-    let connectTimeout = setTimeout(() => {
-        if (ws && ws.readyState !== WebSocket.CLOSED) {
-            ws.close();
+    if (tabId === null) {
+        tabId = createTab();
+        if (tabId === null) {
+            showError('Maximum tabs reached');
+            resetConnectBtn();
+            return;
+        }
+        pendingTabId = tabId;
+    }
+
+    const tab = tabs[tabId];
+    tab.label = `${user}@${host}`;
+    tab.state = 'connecting';
+    renderTabBar();
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    tab.ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+    tab.connectTimeout = setTimeout(() => {
+        if (tab.ws && tab.ws.readyState !== WebSocket.CLOSED) {
+            tab.ws.close();
         }
         showError('Connection timed out');
         resetConnectBtn();
-        ws = null;
+        tab.state = 'form';
+        tab.ws = null;
     }, 15000);
 
-    ws.onopen = () => {
-        ws.send(JSON.stringify({
+    tab.ws.onopen = () => {
+        tab.ws.send(JSON.stringify({
             type: 'connect',
             data: JSON.stringify({ host, port, user, password })
         }));
     };
 
-    ws.onmessage = (event) => {
+    tab.ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
 
         switch (msg.type) {
             case 'connected':
-                clearTimeout(connectTimeout);
-                showTerminal(host, user);
+                clearTimeout(tab.connectTimeout);
+                tab.state = 'connected';
+                pendingTabId = null;
+
+                if (Object.keys(tabs).length === 1 && !document.getElementById('app').classList.contains('terminal-mode')) {
+                    terminalContainer.classList.remove('hidden');
+                    connectForm.classList.add('hidden');
+                    connectForm.classList.remove('overlay-mode');
+                    connectCancelBtn.classList.add('hidden');
+                    document.getElementById('app').classList.add('terminal-mode');
+                    document.getElementById('app').appendChild(connectForm);
+                } else {
+                    hideConnectFormOverlay();
+                }
+
+                initTerminalForTab(tab);
+                switchTab(tabId);
                 break;
             case 'output':
-                if (term) term.write(msg.data);
+                if (tab.term) tab.term.write(msg.data);
                 break;
             case 'error':
-                clearTimeout(connectTimeout);
+                clearTimeout(tab.connectTimeout);
                 showError(msg.data);
                 resetConnectBtn();
+                tab.state = 'form';
                 break;
         }
     };
 
-    ws.onclose = () => {
-        clearTimeout(connectTimeout);
-        if (term) {
-            term.write('\r\n\x1b[31m[Connection closed]\x1b[0m\r\n');
+    tab.ws.onclose = () => {
+        clearTimeout(tab.connectTimeout);
+        if (tab.state === 'connected') {
+            tab.state = 'disconnected';
+            if (tab.term) {
+                tab.term.write('\r\n\x1b[31m[Connection closed]\x1b[0m\r\n');
+            }
+            if (activeTabId === tabId) {
+                connectionInfo.textContent = tab.label + ' [disconnected]';
+                disconnectBtn.disabled = true;
+            }
         }
     };
 
-    ws.onerror = () => {
-        clearTimeout(connectTimeout);
-        showError('WebSocket connection failed');
-        resetConnectBtn();
+    tab.ws.onerror = () => {
+        clearTimeout(tab.connectTimeout);
+        if (tab.state === 'connecting') {
+            showError('WebSocket connection failed');
+            resetConnectBtn();
+            tab.state = 'form';
+        }
     };
 }
 
-function showTerminal(host, user) {
-    connectForm.classList.add('hidden');
-    terminalContainer.classList.remove('hidden');
-    document.getElementById('app').classList.add('terminal-mode');
-    connectionInfo.textContent = `${user}@${host}`;
-
+function initTerminalForTab(tab) {
     const termSettings = currentSettings ? currentSettings.terminal : {};
 
-    term = new Terminal({
+    tab.term = new Terminal({
         cursorBlink: termSettings.cursorBlink !== undefined ? termSettings.cursorBlink : true,
         cursorStyle: termSettings.cursorStyle || 'block',
         fontSize: termSettings.fontSize || 14,
@@ -143,54 +365,53 @@ function showTerminal(host, user) {
         }
     });
 
-    fitAddon = new FitAddon.FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(terminalEl);
-    fitAddon.fit();
+    tab.fitAddon = new FitAddon.FitAddon();
+    tab.term.loadAddon(tab.fitAddon);
+    tab.term.open(tab.terminalEl);
+    tab.fitAddon.fit();
 
-    term.onData((data) => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'input', data }));
+    tab.term.onData((data) => {
+        if (tab.ws && tab.ws.readyState === WebSocket.OPEN) {
+            tab.ws.send(JSON.stringify({ type: 'input', data }));
         }
     });
 
-    term.onResize(({ cols, rows }) => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
+    tab.term.onResize(({ cols, rows }) => {
+        if (tab.ws && tab.ws.readyState === WebSocket.OPEN) {
+            tab.ws.send(JSON.stringify({
                 type: 'resize',
                 data: JSON.stringify({ cols, rows })
             }));
         }
     });
 
-    window.addEventListener('resize', () => {
-        if (fitAddon) fitAddon.fit();
-    });
-
     setTimeout(() => {
-        fitAddon.fit();
-        ws.send(JSON.stringify({
-            type: 'resize',
-            data: JSON.stringify({ cols: term.cols, rows: term.rows })
-        }));
+        tab.fitAddon.fit();
+        if (tab.ws && tab.ws.readyState === WebSocket.OPEN) {
+            tab.ws.send(JSON.stringify({
+                type: 'resize',
+                data: JSON.stringify({ cols: tab.term.cols, rows: tab.term.rows })
+            }));
+        }
     }, 100);
 
-    term.focus();
+    tab.term.focus();
 }
 
-function disconnect() {
-    if (ws) {
-        ws.close();
-        ws = null;
+function disconnectTab(tabId) {
+    const tab = tabs[tabId];
+    if (!tab) return;
+
+    if (tab.ws) {
+        tab.ws.close();
+        tab.ws = null;
     }
-    if (term) {
-        term.dispose();
-        term = null;
+    tab.state = 'disconnected';
+
+    if (activeTabId === tabId) {
+        connectionInfo.textContent = tab.label + ' [disconnected]';
+        disconnectBtn.disabled = true;
     }
-    terminalContainer.classList.add('hidden');
-    connectForm.classList.remove('hidden');
-    document.getElementById('app').classList.remove('terminal-mode');
-    resetConnectBtn();
 }
 
 function openSettings() {
@@ -207,7 +428,9 @@ function openSettings() {
 
 function closeSettings() {
     settingsOverlay.classList.add('hidden');
-    if (term) term.focus();
+    if (activeTabId !== null && tabs[activeTabId] && tabs[activeTabId].term) {
+        tabs[activeTabId].term.focus();
+    }
 }
 
 async function saveSettings() {
@@ -239,13 +462,15 @@ async function saveSettings() {
         currentSettings = await res.json();
         closeSettings();
 
-        if (term) {
-            term.options.fontSize = currentSettings.terminal.fontSize;
-            term.options.cursorStyle = currentSettings.terminal.cursorStyle;
-            term.options.cursorBlink = currentSettings.terminal.cursorBlink;
-            term.options.scrollback = currentSettings.terminal.scrollbackLines;
-            if (fitAddon) fitAddon.fit();
-        }
+        Object.values(tabs).forEach(tab => {
+            if (tab.term) {
+                tab.term.options.fontSize = currentSettings.terminal.fontSize;
+                tab.term.options.cursorStyle = currentSettings.terminal.cursorStyle;
+                tab.term.options.cursorBlink = currentSettings.terminal.cursorBlink;
+                tab.term.options.scrollback = currentSettings.terminal.scrollbackLines;
+                if (tab.fitAddon) tab.fitAddon.fit();
+            }
+        });
     } catch (e) {
         showError('Failed to save settings');
     }

@@ -228,6 +228,109 @@ button:disabled {
     height: 100vh;
     display: flex;
     flex-direction: column;
+    position: relative;
+}
+
+#tab-bar {
+    display: flex;
+    align-items: center;
+    background: #0d1528;
+    border-bottom: 1px solid #333;
+    padding: 0 4px;
+    min-height: 36px;
+    flex-shrink: 0;
+}
+
+#tab-list {
+    display: flex;
+    flex: 1;
+    overflow-x: auto;
+    gap: 2px;
+    padding: 4px 0;
+}
+
+#tab-list::-webkit-scrollbar {
+    height: 0;
+}
+
+.tab-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: #16213e;
+    border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    border-radius: 6px 6px 0 0;
+    color: #888;
+    font-size: 13px;
+    font-family: monospace;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 180px;
+    min-width: 0;
+    transition: background 0.15s, color 0.15s;
+}
+
+.tab-item:hover {
+    background: #1a2a4a;
+    color: #ccc;
+}
+
+.tab-item.active {
+    background: #0f0f23;
+    color: #00d9ff;
+    border-bottom-color: #00d9ff;
+}
+
+.tab-item .tab-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tab-item .tab-close {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #666;
+    font-size: 14px;
+    line-height: 18px;
+    text-align: center;
+    cursor: pointer;
+}
+
+.tab-item .tab-close:hover {
+    background: #ff4757;
+    color: #fff;
+}
+
+.tab-item.active .tab-close {
+    color: #888;
+}
+
+#new-tab-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin-left: 4px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #666;
+    font-size: 18px;
+    line-height: 28px;
+    text-align: center;
+    cursor: pointer;
+}
+
+#new-tab-btn:hover {
+    background: #1a2a4a;
+    color: #00d9ff;
 }
 
 #terminal-header {
@@ -275,10 +378,52 @@ button:disabled {
     background: #ff3344;
 }
 
-#terminal {
+#terminals-wrapper {
     flex: 1;
+    position: relative;
     background: #0f0f23;
+}
+
+.terminal-pane {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     padding: 2px;
+    display: none;
+}
+
+.terminal-pane.active {
+    display: block;
+}
+
+#connect-form.overlay-mode {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(15, 15, 35, 0.92);
+    max-width: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+#connect-cancel-btn {
+    background: #2d3a5c;
+    color: #aaa;
+    border: 1px solid #444;
+}
+
+#connect-cancel-btn:hover {
+    background: #3a4a70;
+    color: #fff;
 }
 
 #settings-overlay {

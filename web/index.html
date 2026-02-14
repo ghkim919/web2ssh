@@ -33,6 +33,7 @@
             <div class="form-actions">
                 <button id="connect-btn">Connect</button>
                 <button id="save-session-btn" type="button">Save</button>
+                <button id="connect-cancel-btn" type="button" class="hidden">Cancel</button>
             </div>
             <div id="error-msg" class="error"></div>
             <div id="session-list">
@@ -41,6 +42,10 @@
             </div>
         </div>
         <div id="terminal-container" class="hidden">
+            <div id="tab-bar">
+                <div id="tab-list"></div>
+                <button id="new-tab-btn" type="button" title="New Tab">+</button>
+            </div>
             <div id="terminal-header">
                 <span id="connection-info"></span>
                 <div id="terminal-header-actions">
@@ -48,7 +53,7 @@
                     <button id="disconnect-btn">Disconnect</button>
                 </div>
             </div>
-            <div id="terminal"></div>
+            <div id="terminals-wrapper"></div>
         </div>
         <div id="settings-overlay" class="hidden">
             <div id="settings-panel">
