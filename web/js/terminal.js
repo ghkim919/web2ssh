@@ -47,6 +47,12 @@ document.querySelectorAll('#connect-form input').forEach(input => {
     });
 });
 
+document.getElementById('auth-type').addEventListener('change', (e) => {
+    const isKey = e.target.value === 'key';
+    document.getElementById('auth-password-fields').classList.toggle('hidden', isKey);
+    document.getElementById('auth-key-fields').classList.toggle('hidden', !isKey);
+});
+
 window.addEventListener('resize', () => {
     if (activeTabId !== null && tabs[activeTabId] && tabs[activeTabId].fitAddon) {
         tabs[activeTabId].fitAddon.fit();
@@ -227,6 +233,11 @@ function showConnectFormOverlay() {
     resetConnectBtn();
     hideError();
     document.getElementById('password').value = '';
+    document.getElementById('passphrase').value = '';
+    document.getElementById('auth-type').value = 'password';
+    document.getElementById('auth-password-fields').classList.remove('hidden');
+    document.getElementById('auth-key-fields').classList.add('hidden');
+    document.getElementById('key-path').value = '';
     terminalsWrapper.appendChild(connectForm);
 }
 
@@ -249,10 +260,18 @@ function connect() {
     const host = document.getElementById('host').value.trim();
     const port = parseInt(document.getElementById('port').value) || 22;
     const user = document.getElementById('user').value.trim();
+    const authType = document.getElementById('auth-type').value;
     const password = document.getElementById('password').value;
+    const keyPath = document.getElementById('key-path').value.trim();
+    const passphrase = document.getElementById('passphrase').value;
 
     if (!host || !user) {
         showError('Host and User are required');
+        return;
+    }
+
+    if (authType === 'key' && !keyPath) {
+        showError('Key Path is required for SSH Key authentication');
         return;
     }
 
@@ -291,9 +310,16 @@ function connect() {
     }, 15000);
 
     tab.ws.onopen = () => {
+        const connectData = { host, port, user, authType };
+        if (authType === 'key') {
+            connectData.keyPath = keyPath;
+            connectData.passphrase = passphrase;
+        } else {
+            connectData.password = password;
+        }
         tab.ws.send(JSON.stringify({
             type: 'connect',
-            data: JSON.stringify({ host, port, user, password })
+            data: JSON.stringify(connectData)
         }));
     };
 
@@ -304,7 +330,7 @@ function connect() {
             case 'connected':
                 clearTimeout(tab.connectTimeout);
                 tab.state = 'connected';
-                tab.connInfo = { host, port, user };
+                tab.connInfo = { host, port, user, authType, keyPath };
                 pendingTabId = null;
 
                 if (Object.keys(tabs).length === 1 && !document.getElementById('app').classList.contains('terminal-mode')) {
@@ -518,26 +544,42 @@ function renderSessions(sessions) {
 
     sessionsEl.innerHTML = sessions.map(s => `
         <div class="session-item" data-id="${s.id}">
-            <div class="session-info" onclick="fillSession('${s.host}', ${s.port}, '${s.user}')">
+            <div class="session-info" onclick="fillSession('${s.host}', ${s.port}, '${s.user}', '${s.authType || 'password'}', '${s.keyPath || ''}')">
                 <span class="session-name">${escapeHtml(s.name)}</span>
-                <span class="session-detail">${escapeHtml(s.user)}@${escapeHtml(s.host)}:${s.port}</span>
+                <span class="session-detail">${escapeHtml(s.user)}@${escapeHtml(s.host)}:${s.port}${s.authType === 'key' ? ' [key]' : ''}</span>
             </div>
             <button class="session-delete" onclick="deleteSession('${s.id}')">×</button>
         </div>
     `).join('');
 }
 
-function fillSession(host, port, user) {
+function fillSession(host, port, user, authType, keyPath) {
     document.getElementById('host').value = host;
     document.getElementById('port').value = port;
     document.getElementById('user').value = user;
-    document.getElementById('password').focus();
+
+    const authTypeEl = document.getElementById('auth-type');
+    authTypeEl.value = authType || 'password';
+    const isKey = authTypeEl.value === 'key';
+    document.getElementById('auth-password-fields').classList.toggle('hidden', isKey);
+    document.getElementById('auth-key-fields').classList.toggle('hidden', !isKey);
+    document.getElementById('key-path').value = keyPath || '';
+    document.getElementById('passphrase').value = '';
+    document.getElementById('password').value = '';
+
+    if (isKey) {
+        document.getElementById('passphrase').focus();
+    } else {
+        document.getElementById('password').focus();
+    }
 }
 
 async function saveSession() {
     const host = document.getElementById('host').value.trim();
     const port = parseInt(document.getElementById('port').value) || 22;
     const user = document.getElementById('user').value.trim();
+    const authType = document.getElementById('auth-type').value;
+    const keyPath = document.getElementById('key-path').value.trim();
 
     if (!host || !user) {
         showError('Host and User are required to save');
@@ -545,12 +587,17 @@ async function saveSession() {
     }
 
     const name = `${user}@${host}`;
+    const body = { name, host, port, user };
+    if (authType === 'key') {
+        body.authType = authType;
+        body.keyPath = keyPath;
+    }
 
     try {
         const res = await fetch('/api/sessions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, host, port, user })
+            body: JSON.stringify(body)
         });
         if (!res.ok) throw new Error('Failed to save');
         await loadSessions();
@@ -583,11 +630,7 @@ function duplicateTab(tabId) {
     switchTab(newTabId);
     showConnectFormOverlay();
 
-    document.getElementById('host').value = srcTab.connInfo.host;
-    document.getElementById('port').value = srcTab.connInfo.port;
-    document.getElementById('user').value = srcTab.connInfo.user;
-    document.getElementById('password').value = '';
-    document.getElementById('password').focus();
+    fillSession(srcTab.connInfo.host, srcTab.connInfo.port, srcTab.connInfo.user, srcTab.connInfo.authType, srcTab.connInfo.keyPath);
 }
 
 const tabContextMenu = document.getElementById('tab-context-menu');

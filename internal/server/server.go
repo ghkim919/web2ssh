@@ -6,6 +6,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,10 +25,13 @@ var upgrader = websocket.Upgrader{
 }
 
 type ConnectRequest struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
-	Password string `json:"password"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	User       string `json:"user"`
+	Password   string `json:"password"`
+	AuthType   string `json:"authType"`
+	KeyPath    string `json:"keyPath"`
+	Passphrase string `json:"passphrase"`
 }
 
 type Message struct {
@@ -153,6 +159,18 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request, configStore *config
 				continue
 			}
 
+			if req.AuthType == "key" {
+				if req.KeyPath == "" {
+					ws.sendError("key path is required for key authentication")
+					continue
+				}
+				req.KeyPath = expandHome(req.KeyPath)
+				if !filepath.IsAbs(req.KeyPath) {
+					ws.sendError("key path must be an absolute path")
+					continue
+				}
+			}
+
 			settings, err := configStore.Load()
 			if err != nil {
 				log.Printf("failed to load settings: %v", err)
@@ -219,10 +237,32 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request, configStore *config
 }
 
 func connectSSH(req ConnectRequest, batcher *outputBatcher, settings config.Settings) (*ssh.Client, *ssh.Session, chan []byte, error) {
+	var authMethod ssh.AuthMethod
+
+	if req.AuthType == "key" {
+		keyData, err := os.ReadFile(req.KeyPath)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to read key file: %v", err)
+		}
+
+		var signer ssh.Signer
+		if req.Passphrase != "" {
+			signer, err = ssh.ParsePrivateKeyWithPassphrase(keyData, []byte(req.Passphrase))
+		} else {
+			signer, err = ssh.ParsePrivateKey(keyData)
+		}
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to parse private key: %v", err)
+		}
+		authMethod = ssh.PublicKeys(signer)
+	} else {
+		authMethod = ssh.Password(req.Password)
+	}
+
 	sshConfig := &ssh.ClientConfig{
 		User: req.User,
 		Auth: []ssh.AuthMethod{
-			ssh.Password(req.Password),
+			authMethod,
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         time.Duration(settings.SSH.ConnectionTimeout) * time.Second,
@@ -302,6 +342,17 @@ func connectSSH(req ConnectRequest, batcher *outputBatcher, settings config.Sett
 	}
 
 	return client, session, stdinCh, nil
+}
+
+func expandHome(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
 }
 
 func keepAlive(client *ssh.Client, interval int, maxFails int, stop chan struct{}) {

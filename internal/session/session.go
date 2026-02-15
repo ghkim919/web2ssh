@@ -9,11 +9,13 @@ import (
 )
 
 type Session struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Host string `json:"host"`
-	Port int    `json:"port"`
-	User string `json:"user"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	User     string `json:"user"`
+	AuthType string `json:"authType,omitempty"`
+	KeyPath  string `json:"keyPath,omitempty"`
 }
 
 type Store struct {
